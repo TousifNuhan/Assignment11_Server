@@ -1,12 +1,30 @@
 const express = require('express');
 const cors = require('cors');
+const multer = require('multer');
 require('dotenv').config()
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const app = express()
 const port = process.env.PORT || 5000
 
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/');
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const originalName = file.originalname;
+    const extension = originalName.split('.').pop();
+    console.log('Saving file:', `${file.fieldname}-${uniqueSuffix}.${extension}`);  // Debug log
+    cb(null, `${file.fieldname}-${uniqueSuffix}.${extension}`);
+  }
+});
+
+const upload = multer({ storage: storage });
+
 app.use(cors())
 app.use(express.json())
+app.use('/uploads', express.static('uploads'));
+
 
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.l6latif.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -26,7 +44,6 @@ async function run() {
     // await client.connect();
     // Send a ping to confirm a successful connection
     // await client.db("admin").command({ ping: 1 });
-
 
     const OnlineGroupStudyDB = client.db('OnlineGpDB').collection('GroupStudy')
     const OnlineGroupStudyDBs = client.db('OnlineGpDB').collection('SubmittedAssignments')
@@ -51,11 +68,37 @@ async function run() {
       res.send(result)
     })
 
+    app.put('/createAssignments/:id',async(req,res)=>{
+      const id=req.params.id
+      const filter={_id: new ObjectId(id)}
+      const options={upsert: true}
+      const UpdatedData=req.body
+      const data={
+        $set:{
+          Title:UpdatedData.Title,
+           Marks:UpdatedData.Marks,
+           dueDate:UpdatedData.dueDate,
+           photoURL:UpdatedData.photoURL,
+           DifficultyLevel:UpdatedData.DifficultyLevel,
+           description:UpdatedData.description
+        }
+      }
+      const result=await OnlineGroupStudyDB.updateOne(filter,data,options)
+      res.send(result)
+    })
+
     // submittedAssignments
-    app.post('/submittedAssignments', async (req, res) => {
-      const data = req.body
-      console.log(data)
-      const result = await OnlineGroupStudyDBs.insertOne(data)
+    app.post('/submittedAssignments', upload.single('File'), async (req, res) => {
+      const { Name, Title, Marks, Email, TextArea, Status } = req.body
+      const file = req.file
+      console.log(file)
+      console.log(file.filename)
+      const FileURL = `/uploads/${file.filename}`
+      const submittedFile = {
+        Name, Title, Marks, Email, TextArea, Status, FileURL
+      }
+
+      const result = await OnlineGroupStudyDBs.insertOne(submittedFile)
       res.send(result)
     })
 
@@ -70,7 +113,16 @@ async function run() {
 
     app.get('/allSubmittedAssignments', async (req, res) => {
       const query = { Status: 'Pending' }
-      const result= await OnlineGroupStudyDBs.find(query).toArray()
+      const result = await OnlineGroupStudyDBs.find(query).toArray()
+      res.send(result)
+    })
+
+    // delete
+    app.delete('/createAssignments/:id',async(req,res)=>{
+      const id=req.params.id
+      console.log(id)
+      const query={_id:new ObjectId(id)}
+      const result=await OnlineGroupStudyDB.deleteOne(query)
       res.send(result)
     })
 
