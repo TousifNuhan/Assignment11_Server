@@ -1,8 +1,11 @@
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
+const jwt = require('jsonwebtoken')
+const cookieParser = require('cookie-parser')
 require('dotenv').config()
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const { use } = require('react');
 const app = express()
 const port = process.env.PORT || 5000
 
@@ -21,9 +24,13 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage: storage });
 
-app.use(cors())
+app.use(cors({
+  origin: ['http://localhost:5173'],   //production a dewar age eta change krte hbe
+  credentials: true
+}))
 app.use(express.json())
 app.use('/uploads', express.static('uploads'));
+app.use(cookieParser())
 
 
 
@@ -48,6 +55,25 @@ async function run() {
     const OnlineGroupStudyDB = client.db('OnlineGpDB').collection('GroupStudy')
     const OnlineGroupStudyDBs = client.db('OnlineGpDB').collection('SubmittedAssignments')
 
+    //auth api's
+
+    app.post('/jwt', async (req, res) => {
+      const user = req.body
+      console.log(user)
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: '5h'
+      })
+      res
+        .cookie('token', token, {
+          httpOnly: true,
+          secure: false,    //production a dewar age eta change krte hbe
+          sameSite: 'lax'   // jkhn secure:true dbo tkhn samesite:none dbo
+        })
+        .send({ success: true })
+    })
+
+
+    // assignment api's
     app.get('/createAssignments/:id', async (req, res) => {
       const id = req.params.id
       const query = { _id: new ObjectId(id) }
@@ -68,22 +94,22 @@ async function run() {
       res.send(result)
     })
 
-    app.put('/createAssignments/:id',async(req,res)=>{
-      const id=req.params.id
-      const filter={_id: new ObjectId(id)}
-      const options={upsert: true}
-      const UpdatedData=req.body
-      const data={
-        $set:{
-          Title:UpdatedData.Title,
-           Marks:UpdatedData.Marks,
-           dueDate:UpdatedData.dueDate,
-           photoURL:UpdatedData.photoURL,
-           DifficultyLevel:UpdatedData.DifficultyLevel,
-           description:UpdatedData.description
+    app.put('/createAssignments/:id', async (req, res) => {
+      const id = req.params.id
+      const filter = { _id: new ObjectId(id) }
+      const options = { upsert: true }
+      const UpdatedData = req.body
+      const data = {
+        $set: {
+          Title: UpdatedData.Title,
+          Marks: UpdatedData.Marks,
+          dueDate: UpdatedData.dueDate,
+          photoURL: UpdatedData.photoURL,
+          DifficultyLevel: UpdatedData.DifficultyLevel,
+          description: UpdatedData.description
         }
       }
-      const result=await OnlineGroupStudyDB.updateOne(filter,data,options)
+      const result = await OnlineGroupStudyDB.updateOne(filter, data, options)
       res.send(result)
     })
 
@@ -102,10 +128,29 @@ async function run() {
       res.send(result)
     })
 
+    app.patch('/submittedAssignments/:id', async (req, res) => {
+      const id = req.params.id
+      const filter = { _id: new ObjectId(id) }
+      const updatedDoc = req.body
+      console.log(updatedDoc)
+      const docs = {
+        $set: {
+          Status: updatedDoc.Status,
+          GetMarks: updatedDoc.GetMarks,
+          Feedback: updatedDoc.Feedback
+
+        }
+      }
+      const result = await OnlineGroupStudyDBs.updateOne(filter, docs)
+      res.send(result)
+    })
+
     // specific user's submitted assignments
     app.get('/mySubmittedAssignments', async (req, res) => {
       const email = req.query.email
       // console.log(email)
+      const token = req.cookies.token
+      console.log(req.cookies.token)
       const query = { Email: email }
       const result = await OnlineGroupStudyDBs.find(query).toArray()
       res.send(result)
@@ -118,11 +163,11 @@ async function run() {
     })
 
     // delete
-    app.delete('/createAssignments/:id',async(req,res)=>{
-      const id=req.params.id
+    app.delete('/createAssignments/:id', async (req, res) => {
+      const id = req.params.id
       console.log(id)
-      const query={_id:new ObjectId(id)}
-      const result=await OnlineGroupStudyDB.deleteOne(query)
+      const query = { _id: new ObjectId(id) }
+      const result = await OnlineGroupStudyDB.deleteOne(query)
       res.send(result)
     })
 
