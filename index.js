@@ -33,6 +33,23 @@ app.use('/uploads', express.static('uploads'));
 app.use(cookieParser())
 
 
+// own middleware --> we can use it in many places. It helps us not to repeat the same thing.
+
+const verifyToken = async (req, res, next) => {
+  const token = req?.cookies?.token
+  if (!token) {
+    return res.status(401).send({ message: 'Unauthorized' })
+  }
+  jwt.verify(token, process.env.ACCESS_TOKEN_SECRET, (err, decoded) => {
+    if (err) {
+      console.log(err)
+      return res.status(401).send({ message: 'Unauthorized' })
+    }
+    console.log("dec", decoded)
+    req.user = decoded;
+    next()
+  })
+}
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.l6latif.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
 
@@ -59,10 +76,11 @@ async function run() {
 
     app.post('/jwt', async (req, res) => {
       const user = req.body
-      console.log(user)
+      // console.log(user)
       const token = jwt.sign(user, process.env.ACCESS_TOKEN_SECRET, {
         expiresIn: '5h'
       })
+      // console.log(token)
       res
         .cookie('token', token, {
           httpOnly: true,
@@ -72,9 +90,17 @@ async function run() {
         .send({ success: true })
     })
 
+    app.post('/logout',async(req,res)=>{
+      const user=req.body
+      console.log(user)
+      res
+      .clearCookie('token')
+      .send({success:true})
+    })
+
 
     // assignment api's
-    app.get('/createAssignments/:id', async (req, res) => {
+    app.get('/createAssignments/:id',verifyToken, async (req, res) => {
       const id = req.params.id
       const query = { _id: new ObjectId(id) }
       const result = await OnlineGroupStudyDB.findOne(query)
@@ -87,10 +113,16 @@ async function run() {
       res.send(result)
     })
 
-    app.post('/createAssignments', async (req, res) => {
-      const newAssignments = req.body
-      console.log(newAssignments)
-      const result = await OnlineGroupStudyDB.insertOne(newAssignments)
+    app.post('/createAssignments',verifyToken, async (req, res) => {
+      const user = req.body
+      console.log(user?.email)
+      // console.log(req.cookies.token)
+      console.log(req.user)
+      if(user?.email !== req.user?.email){
+        return res.status(403).send({message:'Forbidden access'})
+      }
+      // console.log(newAssignments)
+      const result = await OnlineGroupStudyDB.insertOne(user)
       res.send(result)
     })
 
@@ -117,8 +149,8 @@ async function run() {
     app.post('/submittedAssignments', upload.single('File'), async (req, res) => {
       const { Name, Title, Marks, Email, TextArea, Status } = req.body
       const file = req.file
-      console.log(file)
-      console.log(file.filename)
+      // console.log(file)
+      // console.log(file.filename)
       const FileURL = `/uploads/${file.filename}`
       const submittedFile = {
         Name, Title, Marks, Email, TextArea, Status, FileURL
@@ -133,6 +165,7 @@ async function run() {
       const filter = { _id: new ObjectId(id) }
       const updatedDoc = req.body
       console.log(updatedDoc)
+      
       const docs = {
         $set: {
           Status: updatedDoc.Status,
@@ -146,17 +179,21 @@ async function run() {
     })
 
     // specific user's submitted assignments
-    app.get('/mySubmittedAssignments', async (req, res) => {
+    app.get('/mySubmittedAssignments',verifyToken, async (req, res) => {
       const email = req.query.email
       // console.log(email)
       const token = req.cookies.token
-      console.log(req.cookies.token)
+      // console.log(req.cookies.token)
+      // console.log(req.user)
+      if(email!==req.user.email){
+        return res.status(403).send({message:'Forbidden Access'})
+      }
       const query = { Email: email }
       const result = await OnlineGroupStudyDBs.find(query).toArray()
       res.send(result)
     })
 
-    app.get('/allSubmittedAssignments', async (req, res) => {
+    app.get('/allSubmittedAssignments',verifyToken, async (req, res) => {
       const query = { Status: 'Pending' }
       const result = await OnlineGroupStudyDBs.find(query).toArray()
       res.send(result)
